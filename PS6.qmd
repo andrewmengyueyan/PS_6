@@ -1,0 +1,145 @@
+---
+title: "Stat506 PS6"
+format: html
+editor: visual
+---
+
+My Github Link is <https://github.com/andrewmengyueyan/PS_6.git>
+
+```{r}
+library(nycflights13)
+data("flights")
+```
+
+```{r}
+sum(is.na(flights$air_time))
+```
+
+Clean data
+
+```{r}
+library(tidyverse)
+library(dplyr)
+flight <- flights %>%
+  filter(! is.na(air_time))
+```
+
+Define a function to do the stratafied sampling and compute the mean air_time within each origin
+
+```{r}
+bootstrap <- function(x){
+  x %>%
+    group_by(dest) %>%
+    sample_n(n(), TRUE) %>%
+    ungroup() %>%
+    group_by(origin) %>%
+    summarize(avg_air_time = mean(air_time)) %>%
+    ungroup()
+}
+```
+
+#### Serial Processing
+
+```{r}
+bootstrap_results <- replicate(1000, bootstrap(flight), simplify = FALSE) %>% 
+  bind_rows(.id = "No. of Bootstrap")
+```
+
+Group the same origin together
+
+```{r}
+bootstrap_EWR <- bootstrap_results %>%
+  filter(origin == "EWR")
+bootstrap_JFK <- bootstrap_results %>%
+  filter(origin == "JFK")
+bootstrap_LGA <- bootstrap_results %>%
+  filter(origin == "LGA")
+```
+
+Compute the mean and confidence interval of the average air_time from the three origins
+
+```{r}
+avg_air_time_EWR <- flight %>%
+  filter(origin == "EWR") %>%
+  summarize(avg_air_time = mean(air_time, na.rm = TRUE)) %>%
+  pull(avg_air_time)
+avg_air_time_JFK <- flight %>%
+  filter(origin == "JFK") %>%
+  summarize(avg_air_time = mean(air_time, na.rm = TRUE)) %>%
+  pull(avg_air_time)
+avg_air_time_LGA <- flight %>%
+  filter(origin == "LGA") %>%
+  summarize(avg_air_time = mean(air_time, na.rm = TRUE)) %>%
+  pull(avg_air_time)
+CI_EWR_1 <- c(avg_air_time_EWR - 1.96*sd(bootstrap_EWR$avg_air_time), avg_air_time_EWR + 1.96*sd(bootstrap_EWR$avg_air_time))
+CI_JFK_1 <- c(avg_air_time_JFK - 1.96*sd(bootstrap_JFK$avg_air_time), avg_air_time_JFK + 1.96*sd(bootstrap_JFK$avg_air_time))
+CI_LGA_1 <- c(avg_air_time_LGA - 1.96*sd(bootstrap_LGA$avg_air_time), avg_air_time_LGA + 1.96*sd(bootstrap_LGA$avg_air_time))
+```
+
+Generate the summary table
+
+```{r}
+summary_table_1 <- data.frame(
+  Airport = c("EWR", "JFK", "LGA"),
+  Mean_Air_Time = c(avg_air_time_EWR, avg_air_time_JFK, avg_air_time_LGA),
+  CI_Lower = c(CI_EWR_1[1], CI_JFK_1[1], CI_LGA_1[1]),
+  CI_Upper = c(CI_EWR_1[2], CI_JFK_1[2], CI_LGA_1[2])
+)
+print(summary_table_1)
+```
+
+#### Parallel Processing
+
+```{r}
+library(parallel)
+```
+
+```{r}
+cores <- detectCores()
+cl <- makeCluster(cores)
+clusterExport(cl, c("flight", "bootstrap"))
+clusterEvalQ(cl, library(dplyr))
+```
+
+```{r}
+bootstrap_results_parallel <- parLapply(cl, seq_len(1000), function(x) bootstrap(flight)) %>% 
+  bind_rows(.id = "No. of Bootstrap")
+```
+
+```{r}
+stopCluster(cl)
+```
+
+Group the same origin together
+
+```{r}
+bootstrap_EWR_parallel <- bootstrap_results_parallel %>%
+  filter(origin == "EWR")
+bootstrap_JFK_parallel <- bootstrap_results_parallel %>%
+  filter(origin == "JFK")
+bootstrap_LGA_parallel <- bootstrap_results_parallel %>%
+  filter(origin == "LGA")
+```
+
+Compute the mean and confidence interval of the average air_time from the three origins
+
+```{r}
+avg_air_time_EWR_parallel <- avg_air_time_EWR
+avg_air_time_JFK_parallel <- avg_air_time_JFK
+avg_air_time_LGA_parallel <- avg_air_time_LGA
+CI_EWR_2 <- c(avg_air_time_EWR_parallel - 1.96*sd(bootstrap_EWR_parallel$avg_air_time), avg_air_time_EWR_parallel + 1.96*sd(bootstrap_EWR_parallel$avg_air_time))
+CI_JFK_2 <- c(avg_air_time_JFK_parallel - 1.96*sd(bootstrap_JFK_parallel$avg_air_time), avg_air_time_JFK_parallel + 1.96*sd(bootstrap_JFK_parallel$avg_air_time))
+CI_LGA_2 <- c(avg_air_time_LGA_parallel - 1.96*sd(bootstrap_LGA_parallel$avg_air_time), avg_air_time_LGA_parallel + 1.96*sd(bootstrap_LGA_parallel$avg_air_time))
+```
+
+Generate the summary table
+
+```{r}
+summary_table_2 <- data.frame(
+  Airport = c("EWR", "JFK", "LGA"),
+  Mean_Air_Time = c(avg_air_time_EWR_parallel, avg_air_time_JFK_parallel, avg_air_time_LGA_parallel),
+  CI_Lower = c(CI_EWR_2[1], CI_JFK_2[1], CI_LGA_2[1]),
+  CI_Upper = c(CI_EWR_2[2], CI_JFK_2[2], CI_LGA_2[2])
+)
+print(summary_table_2)
+```
